@@ -1,10 +1,11 @@
 # mac-plus-serkey
 Arduino code and Pygame host for a Macintosh (non-ADB) keyboard
 
-The code in this project is based on Tomek Rekawek's `mac-plus-ps2`
-project, which interfaces a PS/2 keyboard to the Mac through an
-Arduino. It is probably less laggy and more reliable than my code,
-which uses some functions from `mac-plus-ps2`.
+The code in this project is based on Tomek Rekawek's
+[`mac-plus-ps2`](https://github.com/trekawek/mac-plus-ps2) project,
+which interfaces a PS/2 keyboard to the Mac through an Arduino. It is
+probably less laggy and more reliable than my code, which uses some
+functions from `mac-plus-ps2`.
 
 This project emulates a Macintosh 128K-to-Plus-compatible keyboard
 using any Serial-capable Arduino. It is a PlatformIO project,
