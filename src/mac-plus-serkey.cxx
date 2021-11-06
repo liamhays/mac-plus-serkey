@@ -29,23 +29,43 @@
 #define CMD_MODEL_NUMBER 0x16
 #define CMD_TEST 0x36
 
-#define LED_SEND 6
-#define LED_RECEIVE 7
+#define CMD_KEYPAD 0x79
+// These are needed for the arrow keys, but note that they are
+// preceded by the Keypad command
+#define KEY_LEFT_DOWN 0x0D
+#define KEY_RIGHT_DOWN 0x05
+#define KEY_UP_DOWN 0x1B
+#define KEY_DOWN_DOWN 0x11
 
-byte readCmd();
+// bit 7 high means key up
+#define KEY_LEFT_UP (0x0D | 0b10000000)
+#define KEY_RIGHT_UP (0x0D | 0b10000000)
+#define KEY_UP_UP (0x0D | 0b10000000)
+#define KEY_DOWN_UP (0x0D | 0b10000000)
+
+// these are what the source computer sends to the Mac to trigger an
+// arrow key, taken straight from pygame_host.py
+#define SOURCE_KEY_LEFT_DOWN 0b01111111 // 0x7f
+#define SOURCE_KEY_RIGHT_DOWN 0b01111110 // 0x7e
+#define SOURCE_KEY_UP_DOWN 0b01111101 // 0x7d
+#define SOURCE_KEY_DOWN_DOWN 0b01111100 // 0x7c
+
+#define SOURCE_KEY_LEFT_UP 0xFF
+#define SOURCE_KEY_RIGHT_UP 0xFE
+#define SOURCE_KEY_UP_UP 0xFD
+#define SOURCE_KEY_DOWN_UP 0xFC
+
 void inquiry();
 byte readByte();
 void sendByte(byte b);
-
+byte sourceKeyToArrowKey(byte sourceKey);
 
 void setup() {
   // let's use a real fast baud rate for minimal latency
   // at the amount I'll be typing, 115200 is probably sufficient.
   Serial.begin(230400);
+  pinMode(13, OUTPUT);
   
-  pinMode(LED_SEND, OUTPUT);
-  pinMode(LED_RECEIVE, OUTPUT);
-
   // The keyboard is responsible for creating a clock signal, which
   // varies depending on what is going on.
   pinMode(MAC_CLOCK_PIN, OUTPUT);
@@ -56,18 +76,14 @@ void loop() {
   pinMode(MAC_DATA_PIN, INPUT_PULLUP);
   // Wait for the Mac to pull the data low, which signals that it is
   // going to send a command.
-  while (digitalRead(MAC_DATA_PIN) != LOW); /* {
-    Serial.println("waiting for Mac data to go low");
-    }*/
+  while (digitalRead(MAC_DATA_PIN) != LOW);
 
   // This delay is from Guide 1, which says that the clock must be
   // delayed a little bit from the moment the data pin falls, so that
   // the computer won't miss it.
 
-  // 400 µs is probably too long, as Guide 1 says that 180 µs is
-  // sufficient. However, it's the work of the original author, and it
-  // will stay until I can test it.
-  delayMicroseconds(400);
+  // At least for my Mac Plus, 300 µs is perfect.
+  delayMicroseconds(300);
   
 
   byte cmd = readByte();
@@ -85,7 +101,17 @@ void loop() {
     // The Instant command is quite boring: the keyboard just
     // responds with its status without any of the 250 ms timeout
     // like in Inquiry.
-
+    
+    // First check arrowKey, if it's nonzero, send it and exit
+    /* if (arrowKey) {
+      Serial.print("instant, arrowKey is 0x");
+      Serial.println(arrowKey, HEX);
+      sendByte(arrowKey);
+      // reset
+      arrowKey = 0;
+      digitalWrite(13, LOW);
+      break;
+      }*/
     serData = Serial.read();
     if (serData != -1) {
       sendByte(serData);
@@ -108,13 +134,12 @@ void loop() {
 }
 
 void inquiry() {
-  pinMode(MAC_DATA_PIN, OUTPUT);
   // Inquiry begins a timer on the keyboard: if no key is pressed in
   // 250 ms (not µs), then the keyboard will send back the null key
   // transition code, NULL_KEYCODE. If the Mac doesn't get any
   // response after 500 ms, it will send the Model Number command to
   // try to reset the keyboard.
-
+  
   unsigned long start = millis();
   // This needs to do something different, so that if the timeout
   // occurs, no Serial.read() result is sent.
@@ -126,16 +151,37 @@ void inquiry() {
   }
   // now either key is not -1 or the timeout has occurred
   // obviously each happening must be handled separately
+  byte command = 0;
+
   if (key == -1) {
     sendByte(NULL_KEYCODE);
+  } else if (key == SOURCE_KEY_LEFT_DOWN ||
+	     key == SOURCE_KEY_RIGHT_DOWN ||
+	     key == SOURCE_KEY_UP_DOWN ||
+	     key == SOURCE_KEY_DOWN_DOWN ||
+	     key == SOURCE_KEY_LEFT_UP ||
+	     key == SOURCE_KEY_RIGHT_UP ||
+	     key == SOURCE_KEY_UP_UP ||
+	     key == SOURCE_KEY_DOWN_UP) {
+
+    // send CMD_KEYPAD and wait for an Instant command, when we send
+    // the arrow key that was sent
+    sendByte(CMD_KEYPAD);
+    pinMode(MAC_DATA_PIN, INPUT_PULLUP);
+    while (digitalRead(MAC_DATA_PIN) != LOW);
+    command = readByte();
+    while (digitalRead(MAC_DATA_PIN) != HIGH);
+    
+    if (command == CMD_INSTANT) {
+      sendByte(sourceKeyToArrowKey(key));
+    }
   } else {
-    Serial.print("sent a key");
     sendByte(key);
   }
 }
 
 byte readByte() {
-  digitalWrite(LED_RECEIVE, HIGH);
+  pinMode(MAC_DATA_PIN, INPUT_PULLUP);
   // During a read, the keyboard is responsible for clocking. It
   // follows the 180/220 µs (400 µs cycle) clocking scheme in read.
   byte b = 0;
@@ -153,12 +199,11 @@ byte readByte() {
     // less than 140?
     delayMicroseconds(140);
   }
-  digitalWrite(LED_RECEIVE, LOW);
   return b;
 }
 
 void sendByte(byte b) {
-  digitalWrite(LED_SEND, HIGH);
+  pinMode(MAC_DATA_PIN, OUTPUT);
   // Again, the keyboard is still responsible for clocking, but using
   // the 330 µs scheme this time.
 
@@ -178,8 +223,30 @@ void sendByte(byte b) {
     digitalWrite(MAC_CLOCK_PIN, HIGH);
     delayMicroseconds(170);
   }
-  digitalWrite(LED_SEND, LOW);
   // Return control to the Mac.
   digitalWrite(MAC_DATA_PIN, HIGH);
 }
 
+
+byte sourceKeyToArrowKey(byte sourceKey) {
+  switch (sourceKey) {
+  case SOURCE_KEY_LEFT_DOWN:
+    return KEY_LEFT_DOWN;
+  case SOURCE_KEY_RIGHT_DOWN:
+    return KEY_RIGHT_DOWN;
+  case SOURCE_KEY_UP_DOWN:
+    return KEY_UP_DOWN;
+  case SOURCE_KEY_DOWN_DOWN:
+    return KEY_DOWN_DOWN;
+
+  case SOURCE_KEY_LEFT_UP:
+    return KEY_LEFT_UP;
+  case SOURCE_KEY_RIGHT_UP:
+    return KEY_RIGHT_UP;
+  case SOURCE_KEY_UP_UP:
+    return KEY_UP_UP;
+  case SOURCE_KEY_DOWN_UP:
+    return KEY_DOWN_UP;
+  }
+  return 0;
+}

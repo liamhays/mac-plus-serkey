@@ -97,11 +97,15 @@ keycodes = {
     # These would have to send the Keypad response ($79) back and then
     # send the keycode.
 
-    # arrow keys, these don't work right
-    pygame.K_LEFT: 0x0d,
-    pygame.K_RIGHT: 0x05,
-    pygame.K_UP: 0x1b,
-    pygame.K_DOWN: 0x11
+    # arrow keys, these are special digits that the Arduino
+    # subsequently manages and processes
+
+    # to follow with the same bit 7 scheme as the other keycodes, these
+    # are 0xFF, 0xFE, 0xFD, and 0xFC with bit 7 low
+    pygame.K_LEFT: 0b01111111, 
+    pygame.K_RIGHT: 0b01111110,
+    pygame.K_UP: 0b01111101,
+    pygame.K_DOWN: 0b01111100
     
 }
 
@@ -134,20 +138,10 @@ while True:
             pygame.quit()
         if event.type == pygame.KEYDOWN:
             code = generate_keycode(event.key, False).to_bytes(1, 'little')
-            #if event.key == pygame.K_LEFT:
-            #    print('left arrow keydown')
-            #    ser.write(0x79)
-            #    ser.write(code)
-            #else:
+            print(hex(generate_keycode(event.key, False)))
             ser.write(code)
         elif event.type == pygame.KEYUP:
             code = generate_keycode(event.key, True).to_bytes(1, 'little')
-            # arrow keys should be handled by a special thing on the arduino side
-            
-            #if event.key == pygame.K_LEFT:
-            #    print('left arrow keyup')
-            #    ser.write(0x79)
-            #    ser.write(code)
-            #else:
+            print(hex(generate_keycode(event.key, True)))
             ser.write(code)
     time.sleep(0.1) # seems to help reduce CPU usage
