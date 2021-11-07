@@ -152,7 +152,7 @@ class PygameHost(object):
 
         # the image is from Herb's Mac Stuff: http://retrotechnology.com/herbs_stuff/mac_plus_lkbd.jpg
         self.disp = pygame.display.set_mode(dimensions)
-        pygame.display.set_caption('Mac Plus serial keyboard')
+        pygame.display.set_caption('Mac Plus serial keyboard: Caps Lock off')
         self.disp.blit(keyboardImage, (0, 0))
         
         font = pygame.font.Font(None, 18)
@@ -188,26 +188,41 @@ class PygameHost(object):
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_CAPSLOCK:
                         if capslock:
-                            # this will jump to the outer while True loop, restarting the event catch
+                            # this will jump to the outer while True
+                            # loop, restarting the event catch
                             break
                         else:
+                            # we should have a caps lock status thing
+                            # in the window
                             capslock = True
                             lastdown = True
-                            
-                    code = self.generate_keycode(event.key, False)
-                    self.ser.write(code)
+                            pygame.display.set_caption(
+                                'Mac Plus serial keyboard: Caps Lock on')
+
+                    # If the key pressed isn't in the dictionary, a
+                    # KeyError is thrown unless we catch it
+                    try:
+                        code = self.generate_keycode(event.key, False)
+                        self.ser.write(code)
+                    except KeyError:
+                        pass
                 elif event.type == pygame.KEYUP:
                     # if the key is Caps Lock, we should only send the
                     # keyup code when capslock is true
                     if event.key == pygame.K_CAPSLOCK:
                         if capslock and not lastdown:
                             capslock = False
+                            pygame.display.set_caption(
+                                'Mac Plus serial keyboard: Caps Lock off')
                         else:
                             lastdown = False
                             break
 
-                    code = self.generate_keycode(event.key, True)
-                    self.ser.write(code)
+                    try:
+                        code = self.generate_keycode(event.key, True)
+                        self.ser.write(code)
+                    except KeyError:
+                        pass
             # This time.sleep() also seems to reduce CPU usage
             time.sleep(0.1)
             # if we don't call update(), the window will pick up
