@@ -7,15 +7,14 @@ import time
 import sys
 import argparse
 
-# we also want this to match the Macintosh Plus integrated keypad, so
-# the Arduino will have to deal with the fact that + and * are in
-# uppercase (see Inside Mac IV).
-
 # This script works reasonably simply: if a non-keypad key changes
 # state (i.e., is pressed or released) on the computer while the
 # Pygame window is active, the script sends the corresponding keycode
-# to the Arduino. The script will send the exact thing that the
-# Arduino needs to send to the Mac, to reduce latency.
+# to the Arduino. The script will send the exact byte that the Arduino
+# needs to send to the Mac, to reduce latency. Each key is stored in
+# the dictionary as the key-down version, and is ORed with 0x80
+# (0b10000000) when the key is released. This is to match the
+# key-up/key-down scheme documented in Inside Macintosh.
 
 # Keypad keys work a little differently. They use special codes that
 # don't map to any keyboard key. The Arduino recognizes these special
@@ -80,11 +79,12 @@ keycodes = {
     pygame.K_EQUALS: 0x31,
 
     # shifted number row
-    # we have to do this because there's no
-    # .lower() equivalent for shifted numbers
+    
+    # we have to include this because there's no Python str.lower()
+    # equivalent for shifted numbers
 
-    # note that these are the same as the unshifted,
-    # because the Shift handling is done by the Mac
+    # note that these are the same as the unshifted, because the Shift
+    # handling is done by the Mac
     pygame.K_BACKQUOTE: 0x65,
     pygame.K_EXCLAIM: 0x25,
     pygame.K_AT: 0x27,
@@ -104,7 +104,7 @@ keycodes = {
     pygame.K_LSHIFT: 0x71,
     pygame.K_RSHIFT: 0x71,
     pygame.K_RETURN: 0x49,
-    pygame.K_CAPSLOCK: 0x73, # This is Caps Lock as on the original keyboard
+    pygame.K_CAPSLOCK: 0x73,
     pygame.K_LCTRL: 0x75, # Option
     pygame.K_RCTRL: 0x75, # Option
     pygame.K_LALT: 0x6f, # Command
@@ -113,29 +113,26 @@ keycodes = {
 
     # keypad codes
 
-    # to follow with the same bit 7 scheme as the other keycodes, these
-    # are 0xFF, 0xFE, 0xFD, and 0xFC with bit 7 low
-
-    # the highest keydown keycode is 0x6F, so we should have enough space for
-    # every keypad key
-
+    # to follow with the same bit 7 scheme as the other keycodes,
+    # these are 0xFF, 0xFE, 0xFD, and 0xFC but bit 7 has been set low
+    # for each of those four numbers
     pygame.K_LEFT: 0x7f, 
     pygame.K_RIGHT: 0x7e, 
     pygame.K_UP: 0x7d, 
     pygame.K_DOWN: 0x7c, 
-    
 }
 
 
 class PygameHost(object):
-    def __init__(self, port):
+    def __init__(self, port: str):
         self.ser = serial.Serial(port, 230400)
-        # we only initialize the package we need, because I was having issues
-        # with this script using 100% CPU for no reason, and this seemed to
-        # help stop that.
+        # we only initialize the packages we need, because I was
+        # having issues with this script using 100% CPU for no reason,
+        # and this seemed to help stop that.
         pygame.display.init()
         pygame.font.init()
-        # kill the mixer in particular, on Linux, this is known to cause issues
+        # Kill the mixer in particular. On Linux, this is known to
+        # cause issues because of some odd interactions with ALSA.
         pygame.mixer.quit()
 
         # A much more useful image would be one that shows what each
@@ -144,17 +141,24 @@ class PygameHost(object):
         keyboardImage = pygame.image.load('mac_plus_lkbd.jpg')
         # The image is 974x473, so let's make it half size in a window of the
         # same size, which is 487x237
-        dimensions = ((int)(keyboardImage.get_width() / 2), (int)(keyboardImage.get_height() / 2))
+        dimensions = (
+            (int)(keyboardImage.get_width() / 2),
+            (int)(keyboardImage.get_height() / 2)
+        )
         keyboardImage = pygame.transform.scale(keyboardImage, dimensions)
 
-        # the image is from Herb's Mac Stuff: http://retrotechnology.com/herbs_stuff/mac_plus_lkbd.jpg
+        # the image is from Herb's Mac Stuff:
+        # http://retrotechnology.com/herbs_stuff/mac_plus_lkbd.jpg
         self.disp = pygame.display.set_mode(dimensions)
         pygame.display.set_caption('Mac Plus serial keyboard: Caps Lock off')
         self.disp.blit(keyboardImage, (0, 0))
         
         font = pygame.font.Font(None, 18)
         # arguments to this function: string, antialiasing toggle, color
-        text = font.render('image source: http://retrotechnology.com/herbs_stuff/mac_plus_lkbd.jpg', 1, (255, 255, 255))
+        text = font.render(
+            'image source: http://retrotechnology.com/herbs_stuff/mac_plus_lkbd.jpg',
+            1,
+            (255, 255, 255))
         self.disp.blit(text, (45, 216))
         
         pygame.display.update()
@@ -186,7 +190,7 @@ class PygameHost(object):
                     if event.key == pygame.K_CAPSLOCK:
                         if capslock:
                             # this will jump to the outer while True
-                            # loop, restarting the event catch
+                            # loop, restarting the event loop
                             break
                         else:
                             # we should have a caps lock status thing
