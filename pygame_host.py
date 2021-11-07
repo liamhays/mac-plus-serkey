@@ -7,12 +7,9 @@ import time
 import sys
 import argparse
 
-# cool thing to implement: arguments allowing caps lock to be another key
-
 # we also want this to match the Macintosh Plus integrated keypad, so
 # the Arduino will have to deal with the fact that + and * are in
 # uppercase (see Inside Mac IV).
-
 
 # This script works reasonably simply: if a non-keypad key changes
 # state (i.e., is pressed or released) on the computer while the

@@ -1,10 +1,4 @@
-// Adapted from https://github.com/trekawek/mac-plus-ps2.
-
-// The author used the resources, apparently.
-// Guide 1: http://www.synack.net/~bbraun/mackbd/index.html
-// Guide 2: http://www.mac.linux-m68k.org/devel/plushw.php
-
-// Mac keycodes are defined in Inside Macintosh, Volume III.
+// Adapted starting with https://github.com/trekawek/mac-plus-ps2.
 #include <Arduino.h>
 
 // In the cable I made, the colors of the SOLID-CORE wires map to
@@ -14,10 +8,6 @@
 // | White  | Data  | ardu pin 3
 // | Yellow | +5V   |
 
-// This code works, but it's laggy and likes to frequently repeat
-// characters even though I never pressed the key multiple times or
-// held it down. I believe it is printing out either 8 or 9 characters
-// total when it decides to repeat.
 #define MAC_CLOCK_PIN 2
 #define MAC_DATA_PIN 3
 
@@ -30,17 +20,20 @@
 #define CMD_TEST 0x36
 
 #define CMD_KEYPAD 0x79
-// These are needed for the arrow keys, but note that they are
-// preceded by the Keypad command
+
+// These are sent when an arrow key is pressed, but they have to
+// preceded by a Keypad (CMD_KEYPAD) command
 #define KEY_LEFT 0x0D
 #define KEY_RIGHT 0x05
 #define KEY_UP 0x1B
 #define KEY_DOWN 0x11
 
+// Bit 7 high tells the Mac that the key has been released.
 #define KEY_LEFT_UP 0x0D | 0x80
 #define KEY_RIGHT_UP 0x05 | 0x80
 #define KEY_UP_UP 0x1B | 0x80
 #define KEY_DOWN_UP 0x11 | 0x80
+
 // these are what the source computer sends to the Mac to trigger an
 // arrow key, taken straight from pygame_host.py
 #define SOURCE_KEY_LEFT 0x7f
@@ -58,9 +51,19 @@ uint8_t readByte();
 void sendByte(uint8_t b);
 uint8_t sourceKeyToArrowKey(uint8_t sourceKey);
 
+/* This code does this:
+   - Wait for the Mac to ask for new keystrokes
+   - Go read from the Serial buffer
+   - Send out that data to the Mac
+   - Return to the Mac-detecting loop
+
+   It's reasonably simple in general, but it has to precisely follow
+   the Mac's data scheme, which is explained in Inside Macintosh
+   Volume III.
+*/
+
 void setup() {
-  // let's use a real fast baud rate for minimal latency
-  // at the amount I'll be typing, 115200 is probably sufficient.
+  // This baud rate is almost surely unnecessarily high, but it can't hurt.
   Serial.begin(230400);
   pinMode(13, OUTPUT);
   
@@ -76,9 +79,10 @@ void loop() {
   // going to send a command.
   while (digitalRead(MAC_DATA_PIN) != LOW);
 
-  // This delay is from Guide 1, which says that the clock must be
-  // delayed a little bit from the moment the data pin falls, so that
-  // the computer won't miss it.
+  // This delay is from
+  // http://www.synack.net/~bbraun/mackbd/index.html, which says that
+  // the clock must be delayed a little bit from the moment the data
+  // pin falls, so that the computer won't miss it.
 
   // At least for my Mac Plus, 300 µs is perfect.
   delayMicroseconds(300);
@@ -88,7 +92,7 @@ void loop() {
   // The Mac indicates that it's ready for a response by driving the
   // data high.
   while (digitalRead(MAC_DATA_PIN) != HIGH);
-  Serial.println("Mac data is high");
+
   uint8_t serData;
   switch (cmd) {
   case CMD_INQUIRY:
@@ -99,17 +103,6 @@ void loop() {
     // The Instant command is quite boring: the keyboard just
     // responds with its status without any of the 250 ms timeout
     // like in Inquiry.
-    
-    // First check arrowKey, if it's nonzero, send it and exit
-    /* if (arrowKey) {
-      Serial.print("instant, arrowKey is 0x");
-      Serial.println(arrowKey, HEX);
-      sendByte(arrowKey);
-      // reset
-      arrowKey = 0;
-      digitalWrite(13, LOW);
-      break;
-      }*/
     serData = Serial.read();
     if (serData != -1) {
       sendByte(serData);
@@ -120,12 +113,12 @@ void loop() {
 
   case CMD_MODEL_NUMBER:
     // 0x03 is just "keyboard, model 1, no peripherals". This is a
-    // generic response since the Mac expects /something/.
+    // generic response since the Mac needs a response.
     sendByte(0b00000101); // keyboard model 2, maybe Mac Plus?
     break;
     
   case CMD_TEST:
-    // Send ACK, simply because we have no way to test. NAK is 0x77.
+    // Send ACK, simply because there's nothing to test. NAK would be 0x77.
     sendByte(0x7d);
     break;
   }
@@ -139,38 +132,40 @@ void inquiry() {
   // try to reset the keyboard.
   
   unsigned long start = millis();
-  // This needs to do something different, so that if the timeout
-  // occurs, no Serial.read() result is sent.
-  // That said, it works...I don't know why.
-  
+
+  // We continously try to get a byte while the timeout has not passed
+  // and there is no new Serial data (indicated by Serial.read returning -1).
   int key = Serial.read();
   while ((millis() - start) < 250 && key == -1) {
     key = Serial.read();
   }
   // now either key is not -1 or the timeout has occurred
   // obviously each happening must be handled separately
-  uint8_t command = 0;
+
 
   if (key == -1) {
+    // If we reached the timeout and never got any data, send the null
+    // keycode.
     sendByte(NULL_KEYCODE);
   } else if (key == SOURCE_KEY_LEFT || key == SOURCE_KEY_RIGHT ||
 	     key == SOURCE_KEY_UP || key == SOURCE_KEY_DOWN ||
 	     key == SOURCE_KEY_LEFT_UP || key == SOURCE_KEY_RIGHT_UP ||
 	     key == SOURCE_KEY_UP_UP || key == SOURCE_KEY_DOWN_UP) {
-    // If the byte sent is a keypad code, manage it specially.
-    // send CMD_KEYPAD and wait for an Instant command, when we send
-    // the arrow key that was sent
+    // If the byte sent is a keypad code, we have to manage it in a
+    // specific way: send CMD_KEYPAD and wait for an Instant command,
+    // and then we send the arrow key that was sent.
     sendByte(CMD_KEYPAD);
     pinMode(MAC_DATA_PIN, INPUT_PULLUP);
     while (digitalRead(MAC_DATA_PIN) != LOW);
-    command = readByte();
+    uint8_t command = readByte();
     while (digitalRead(MAC_DATA_PIN) != HIGH);
     
     if (command == CMD_INSTANT) {
       sendByte(sourceKeyToArrowKey(key));
     }
   } else {
-    // and if we get here, we can just directly send the code
+    // And if the keycode was just a normal key, send it and return to
+    // the main loop.
     sendByte(key);
   }
 }
@@ -179,7 +174,8 @@ void inquiry() {
 uint8_t readByte() {
   pinMode(MAC_DATA_PIN, INPUT_PULLUP);
   // During a read, the keyboard is responsible for clocking. It
-  // follows the 180/220 µs (400 µs cycle) clocking scheme in read.
+  // follows the 180/220 µs (400 µs cycle) clocking scheme (see Inside
+  // Mac III) in read.
   uint8_t b = 0;
   for (uint8_t i = 0; i < 8; i++) {
     digitalWrite(MAC_CLOCK_PIN, LOW);
@@ -247,5 +243,7 @@ uint8_t sourceKeyToArrowKey(uint8_t sourceKey) {
   case SOURCE_KEY_DOWN_UP:
     return KEY_DOWN_UP;
   }
-  return 0;
+  // This should never be called in a situation where execution would
+  // reach here, but it's good to have this anyway.
+  return NULL_KEYCODE;
 }
