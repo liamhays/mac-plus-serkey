@@ -32,33 +32,31 @@
 #define CMD_KEYPAD 0x79
 // These are needed for the arrow keys, but note that they are
 // preceded by the Keypad command
-#define KEY_LEFT_DOWN 0x0D
-#define KEY_RIGHT_DOWN 0x05
-#define KEY_UP_DOWN 0x1B
-#define KEY_DOWN_DOWN 0x11
+#define KEY_LEFT 0x0D
+#define KEY_RIGHT 0x05
+#define KEY_UP 0x1B
+#define KEY_DOWN 0x11
 
-// bit 7 high means key up
-#define KEY_LEFT_UP (0x0D | 0b10000000)
-#define KEY_RIGHT_UP (0x0D | 0b10000000)
-#define KEY_UP_UP (0x0D | 0b10000000)
-#define KEY_DOWN_UP (0x0D | 0b10000000)
-
+#define KEY_LEFT_UP 0x0D | 0x80
+#define KEY_RIGHT_UP 0x05 | 0x80
+#define KEY_UP_UP 0x1B | 0x80
+#define KEY_DOWN_UP 0x11 | 0x80
 // these are what the source computer sends to the Mac to trigger an
 // arrow key, taken straight from pygame_host.py
-#define SOURCE_KEY_LEFT_DOWN 0b01111111 // 0x7f
-#define SOURCE_KEY_RIGHT_DOWN 0b01111110 // 0x7e
-#define SOURCE_KEY_UP_DOWN 0b01111101 // 0x7d
-#define SOURCE_KEY_DOWN_DOWN 0b01111100 // 0x7c
+#define SOURCE_KEY_LEFT 0x7f
+#define SOURCE_KEY_RIGHT 0x7e
+#define SOURCE_KEY_UP 0x7d
+#define SOURCE_KEY_DOWN 0x7c
 
-#define SOURCE_KEY_LEFT_UP 0xFF
-#define SOURCE_KEY_RIGHT_UP 0xFE
-#define SOURCE_KEY_UP_UP 0xFD
-#define SOURCE_KEY_DOWN_UP 0xFC
+#define SOURCE_KEY_LEFT_UP 0xff
+#define SOURCE_KEY_RIGHT_UP 0xfe
+#define SOURCE_KEY_UP_UP 0xfd
+#define SOURCE_KEY_DOWN_UP 0xfc
 
 void inquiry();
-byte readByte();
-void sendByte(byte b);
-byte sourceKeyToArrowKey(byte sourceKey);
+uint8_t readByte();
+void sendByte(uint8_t b);
+uint8_t sourceKeyToArrowKey(uint8_t sourceKey);
 
 void setup() {
   // let's use a real fast baud rate for minimal latency
@@ -86,12 +84,12 @@ void loop() {
   delayMicroseconds(300);
   
 
-  byte cmd = readByte();
+  uint8_t cmd = readByte();
   // The Mac indicates that it's ready for a response by driving the
   // data high.
   while (digitalRead(MAC_DATA_PIN) != HIGH);
   Serial.println("Mac data is high");
-  byte serData;
+  uint8_t serData;
   switch (cmd) {
   case CMD_INQUIRY:
     inquiry();
@@ -151,19 +149,15 @@ void inquiry() {
   }
   // now either key is not -1 or the timeout has occurred
   // obviously each happening must be handled separately
-  byte command = 0;
+  uint8_t command = 0;
 
   if (key == -1) {
     sendByte(NULL_KEYCODE);
-  } else if (key == SOURCE_KEY_LEFT_DOWN ||
-	     key == SOURCE_KEY_RIGHT_DOWN ||
-	     key == SOURCE_KEY_UP_DOWN ||
-	     key == SOURCE_KEY_DOWN_DOWN ||
-	     key == SOURCE_KEY_LEFT_UP ||
-	     key == SOURCE_KEY_RIGHT_UP ||
-	     key == SOURCE_KEY_UP_UP ||
-	     key == SOURCE_KEY_DOWN_UP) {
-
+  } else if (key == SOURCE_KEY_LEFT || key == SOURCE_KEY_RIGHT ||
+	     key == SOURCE_KEY_UP || key == SOURCE_KEY_DOWN ||
+	     key == SOURCE_KEY_LEFT_UP || key == SOURCE_KEY_RIGHT_UP ||
+	     key == SOURCE_KEY_UP_UP || key == SOURCE_KEY_DOWN_UP) {
+    // If the byte sent is a keypad code, manage it specially.
     // send CMD_KEYPAD and wait for an Instant command, when we send
     // the arrow key that was sent
     sendByte(CMD_KEYPAD);
@@ -176,16 +170,18 @@ void inquiry() {
       sendByte(sourceKeyToArrowKey(key));
     }
   } else {
+    // and if we get here, we can just directly send the code
     sendByte(key);
   }
 }
 
-byte readByte() {
+
+uint8_t readByte() {
   pinMode(MAC_DATA_PIN, INPUT_PULLUP);
   // During a read, the keyboard is responsible for clocking. It
   // follows the 180/220 µs (400 µs cycle) clocking scheme in read.
-  byte b = 0;
-  for (byte i = 0; i < 8; i++) {
+  uint8_t b = 0;
+  for (uint8_t i = 0; i < 8; i++) {
     digitalWrite(MAC_CLOCK_PIN, LOW);
     delayMicroseconds(180);
     digitalWrite(MAC_CLOCK_PIN, HIGH);
@@ -202,7 +198,7 @@ byte readByte() {
   return b;
 }
 
-void sendByte(byte b) {
+void sendByte(uint8_t b) {
   pinMode(MAC_DATA_PIN, OUTPUT);
   // Again, the keyboard is still responsible for clocking, but using
   // the 330 µs scheme this time.
@@ -210,7 +206,7 @@ void sendByte(byte b) {
   // This is a super weird, but rather genius, way to send the data. m
   // is shifted right by one each loop, creating a bitmask that
   // reveals only one bit each loop, starting at the highest bit.
-  for (byte m = 128; m > 0; m >>= 1) {
+  for (uint8_t m = 128; m > 0; m >>= 1) {
     // Write the bit 40 µs /before/ the clock goes low, as per the
     // protocol standard. It is held through the entire cycle.
     digitalWrite(MAC_DATA_PIN, (b & m) ? HIGH : LOW);
@@ -227,17 +223,20 @@ void sendByte(byte b) {
   digitalWrite(MAC_DATA_PIN, HIGH);
 }
 
+// This is a very stupid function, but there is no better way to do
+// it. We have to convert the source key code into the Mac key code.
+uint8_t sourceKeyToArrowKey(uint8_t sourceKey) {
+  // bit 7 means key up
 
-byte sourceKeyToArrowKey(byte sourceKey) {
   switch (sourceKey) {
-  case SOURCE_KEY_LEFT_DOWN:
-    return KEY_LEFT_DOWN;
-  case SOURCE_KEY_RIGHT_DOWN:
-    return KEY_RIGHT_DOWN;
-  case SOURCE_KEY_UP_DOWN:
-    return KEY_UP_DOWN;
-  case SOURCE_KEY_DOWN_DOWN:
-    return KEY_DOWN_DOWN;
+  case SOURCE_KEY_LEFT:
+    return KEY_LEFT;
+  case SOURCE_KEY_RIGHT:
+    return KEY_RIGHT;
+  case SOURCE_KEY_UP:
+    return KEY_UP;
+  case SOURCE_KEY_DOWN:
+    return KEY_DOWN;
 
   case SOURCE_KEY_LEFT_UP:
     return KEY_LEFT_UP;
