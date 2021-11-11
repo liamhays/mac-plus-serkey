@@ -119,12 +119,20 @@ keycodes = {
     pygame.K_LEFT: 0x7f, 
     pygame.K_RIGHT: 0x7e, 
     pygame.K_UP: 0x7d, 
-    pygame.K_DOWN: 0x7c, 
+    pygame.K_DOWN: 0x7c,
+
+    # we have learned from experience that some applications (MPW in
+    # particular) need the Enter key. We'll map it to Keypad enter,
+    # but also to the Delete key, since not everyone has a numpad on
+    # their keyboard.
+    pygame.K_DELETE: 0x69,
+    pygame.K_KP_ENTER: 0x69
 }
 
 
 class PygameHost(object):
-    def __init__(self, port: str):
+    def __init__(self, port: str, capslock_reassigned: bool):
+        self.capslock_reassigned = capslock_reassigned
         self.ser = serial.Serial(port, 230400)
         # we only initialize the packages we need, because I was
         # having issues with this script using 100% CPU for no reason,
@@ -187,7 +195,7 @@ class PygameHost(object):
                     pygame.quit()
                     sys.exit(0)
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_CAPSLOCK:
+                    if event.key == pygame.K_CAPSLOCK and not self.capslock_reassigned:
                         if capslock:
                             # this will jump to the outer while True
                             # loop, restarting the event loop
@@ -210,7 +218,7 @@ class PygameHost(object):
                 elif event.type == pygame.KEYUP:
                     # if the key is Caps Lock, we should only send the
                     # keyup code when capslock is true
-                    if event.key == pygame.K_CAPSLOCK:
+                    if event.key == pygame.K_CAPSLOCK and not self.capslock_reassigned:
                         if capslock and not lastdown:
                             capslock = False
                             pygame.display.set_caption(
@@ -259,13 +267,15 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    capslock_reassigned = False
     if args.caps_is_option:
         print('Caps Lock has been reassigned to Option')
         # reassign the pygame.K_CAPSLOCK keycode to the pygame.K_OPTION keycode
         keycodes[pygame.K_CAPSLOCK] = keycodes[pygame.K_LCTRL]
+        capslock_reassigned = True
     elif args.caps_is_command:
         print('Caps Lock has been reassigned to Command')
         keycodes[pygame.K_CAPSLOCK] = keycodes[pygame.K_LALT]
-        
-    host = PygameHost(args.port)
+        capslock_reassigned = True
+    host = PygameHost(args.port, capslock_reassigned)
     host.main_loop()

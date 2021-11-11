@@ -84,8 +84,7 @@ void loop() {
   // the clock must be delayed a little bit from the moment the data
   // pin falls, so that the computer won't miss it.
 
-  // At least for my Mac Plus, 300 µs is perfect.
-  delayMicroseconds(300);
+  delayMicroseconds(400);
   
 
   uint8_t cmd = readByte();
